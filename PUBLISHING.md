@@ -46,9 +46,12 @@ Per file, in order:
 1. **Detect and unwrap** a double-bundled export. Assets that exist only in the
    discarded wrapper are written to `uploads/` first.
 2. **Extract inlined video** over 1 MB to `uploads/` and repoint at it.
-   Content-addressed: an identical file already hosted is reused rather than
-   duplicated. A *re-encode* of an existing video will not match, so that case
-   is logged as a warning — check it before committing a near-duplicate.
+   Reuses a copy already hosted rather than duplicating: exact hash first, then
+   — for MP4s — the same cut re-muxed, matched on identical duration plus a size
+   within 0.5%. That second check matters: an export has shipped a re-encode of
+   a video already hosted, differing from byte 33 while being the same 111.46s
+   cut. A hash cannot see that, and the duplicate costs ~19 MB of permanent
+   history each time. A genuinely new video is extracted and logged as such.
 3. **Promote** `data-remote-src` / `data-remote-poster` to `src` / `poster`.
 4. **Rewrite links** to clean URLs and repoint routes that do not exist.
 5. **Remove** the dead `/contact` link.

@@ -23,19 +23,23 @@ const DRY = process.argv.includes('--dry-run');
 
 const B = String.fromCharCode(92); // a real backslash, never an escape
 
-/* Which page a dropped file becomes. Matched on a squashed lowercase name, so
-   "ULP Total Package (standalone) (1).html" still lands on total-package. */
+/* Which page a dropped file becomes, matched on the filename reduced to
+   lowercase words: "ULP Home (standalone).html" -> "ulp home standalone".
+   Word boundaries matter — prefixes and "(standalone)" / "(1)" suffixes vary
+   run to run, so matching has to see "home" as its own word rather than as
+   letters buried in "ulphomestandalone". */
+const norm = f => f.toLowerCase().replace(/\.html?$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const PAGES = [
-  { page: 'total-package', match: /totalpackage/,        active: '/total-package' },
-  { page: 'thank-you',     match: /thankyou/,            active: null },
-  { page: 'privacy',       match: /privacy/,             active: null },
-  { page: 'index',         match: /(^|[^a-z])home|index/, active: null },
-  { page: 'about',         match: /about/,               active: '/about' },
-  { page: 'learn',         match: /learn/,               active: '/learn' },
-  { page: 'results',       match: /results/,             active: '/results' },
-  { page: 'pricing',       match: /pricing/,             active: '/pricing' },
-  { page: 'terms',         match: /terms/,               active: null },
-  { page: 'intake',        match: /intake/,              active: null },
+  { page: 'total-package', match: /\btotal package\b|\btotalpackage\b/, active: '/total-package' },
+  { page: 'thank-you',     match: /\bthank you\b|\bthankyou\b/,         active: null },
+  { page: 'privacy',       match: /\bprivacy\b/,                        active: null },
+  { page: 'index',         match: /\bhome\b|\bindex\b/,                 active: null },
+  { page: 'about',         match: /\babout\b/,                          active: '/about' },
+  { page: 'learn',         match: /\blearn\b/,                          active: '/learn' },
+  { page: 'results',       match: /\bresults?\b/,                       active: '/results' },
+  { page: 'pricing',       match: /\bpricing\b/,                        active: '/pricing' },
+  { page: 'terms',         match: /\bterms\b/,                          active: null },
+  { page: 'intake',        match: /\bintake\b/,                         active: null },
 ];
 
 /* Internal links: the export emits filenames and some routes that have never
@@ -94,15 +98,61 @@ function readBundleScript(s, type) {
   return { open, close, text: s.slice(open, close).trim() };
 }
 
-/* Save a manifest asset to uploads/, reusing an identical file if we already
-   host one. Content-addressed, so re-exports do not pile up duplicates. */
+/* Duration in seconds from an MP4's mvhd box, or null if it cannot be read.
+   Used to recognise the same video re-muxed, which a hash cannot. */
+function mp4Duration(buf) {
+  try {
+    if (buf.length < 16 || buf.toString('latin1', 4, 8) !== 'ftyp') return null;
+    let off = 0, moov = null;
+    while (off < buf.length - 8) {
+      const len = buf.readUInt32BE(off);
+      if (len < 8) break;
+      if (buf.toString('latin1', off + 4, off + 8) === 'moov') { moov = { off, len }; break; }
+      off += len;
+    }
+    if (!moov) return null;
+    let o = moov.off + 8;
+    while (o < moov.off + moov.len - 8) {
+      const len = buf.readUInt32BE(o);
+      if (len < 8) break;
+      if (buf.toString('latin1', o + 4, o + 8) === 'mvhd') {
+        const v = buf[o + 8];
+        const scale = v === 1 ? Number(buf.readBigUInt64BE(o + 28)) : buf.readUInt32BE(o + 20);
+        const units = v === 1 ? Number(buf.readBigUInt64BE(o + 36)) : buf.readUInt32BE(o + 24);
+        return scale ? units / scale : null;
+      }
+      o += len;
+    }
+  } catch { /* unreadable — fall back to hashing alone */ }
+  return null;
+}
+
+/* Save a manifest asset to uploads/, reusing a copy we already host.
+ *
+ * Exact hash first. Then, for MP4s, the same video re-muxed: exports have
+ * shipped a re-encode of a video already hosted, differing from byte 33 while
+ * being the same cut. A hash cannot see that, and committing the near-duplicate
+ * costs ~19MB of permanent history every time it happens. Matching on identical
+ * duration plus a size within 0.5% is a strong enough signal, and the fallback
+ * when it is wrong is a duplicate file rather than a broken page.
+ */
 function stash(buf, preferredName) {
   const digest = sha(buf);
+  const dur = mp4Duration(buf);
+  let nearMiss = null;
   for (const f of fs.readdirSync(UPLOADS)) {
     const p = path.join(UPLOADS, f);
-    if (fs.statSync(p).isFile() && fs.statSync(p).size === buf.length && sha(fs.readFileSync(p)) === digest) {
-      return { name: f, reused: true };
+    if (!fs.statSync(p).isFile()) continue;
+    const size = fs.statSync(p).size;
+    if (size === buf.length && sha(fs.readFileSync(p)) === digest) return { name: f, reused: 'identical' };
+    if (dur !== null && Math.abs(size - buf.length) / buf.length < 0.005) {
+      const other = mp4Duration(fs.readFileSync(p));
+      if (other !== null && Math.abs(other - dur) < 0.05) nearMiss = { name: f, size, dur: other };
     }
+  }
+  if (nearMiss) {
+    log(`    reusing uploads/${nearMiss.name} — same ${nearMiss.dur.toFixed(2)}s cut, re-muxed (${nearMiss.size} vs ${buf.length} bytes)`);
+    return { name: nearMiss.name, reused: 're-mux' };
   }
   if (!DRY) fs.writeFileSync(path.join(UPLOADS, preferredName), buf);
   return { name: preferredName, reused: false };
@@ -207,40 +257,50 @@ function asPricing(markup, E) {
   return open + 'Pricing' + markup.slice(markup.length - clen);
 }
 
-/* Pricing is linked in both navs and the footer. The export ships the nav
-   links but never a footer one. */
+/* Pricing is linked in both navs and the footer. Nav and footer are checked
+   separately: exports ship the nav links but have never shipped a footer one,
+   so a single "is Pricing linked anywhere" test silently skips the footer. */
 function ensurePricing(s, E) {
-  if (s.includes('href=' + E.Q + '/pricing' + E.Q)) return [s, 'already present'];
+  const PRICING = 'href=' + E.Q + '/pricing' + E.Q;
   const RES = '<a href=' + E.Q + '/results' + E.Q;
-  const hits = [];
-  let i = -1;
-  while ((i = s.indexOf(RES, i + 1)) !== -1) {
-    const [end, len] = firstOf(s, E.closes, i);
-    const m = s.slice(i, end + len);
-    if (m.includes('ulp-moblink') || m.includes('font-size:13.5px')) hits.push([i, end + len, m]);
-  }
+
+  /* Nav: one per nav container that is missing it, cloned from that
+     container's own Results link so the styling matches. */
   let nav = 0;
-  for (let k = hits.length - 1; k >= 0; k--) {
-    const [, en, m] = hits[k];
+  for (const cls of ['ulp-navlinks', 'ulp-mobmenu']) {
+    const c = s.indexOf('class=' + E.Q + cls + E.Q);
+    if (c === -1) continue;
+    const [colEnd] = firstOf(s, E.divs, c);
+    if (s.slice(c, colEnd).includes(PRICING)) continue;
+    let at = -1, i = c;
+    while ((i = s.indexOf(RES, i + 1)) !== -1 && i < colEnd) at = i;
+    if (at === -1) continue;
+    const [end, len] = firstOf(s, E.closes, at);
+    const m = s.slice(at, end + len);
     const sep = B + 'n' + (m.includes('ulp-moblink') ? '        ' : '          ');
-    s = s.slice(0, en) + sep + asPricing(m, E) + s.slice(en);
+    s = s.slice(0, end + len) + sep + asPricing(m, E) + s.slice(end + len);
     nav++;
   }
+
+  /* Footer: into the PRODUCTS column after Results, so it reads in the same
+     order as the nav. */
   let foot = 0;
   const p = s.indexOf('>PRODUCTS<');
   if (p !== -1) {
     const [colEnd] = firstOf(s, E.divs, p);
     const col = s.slice(p, colEnd);
-    const r = col.indexOf('>Results<');
-    const lastA = r !== -1 ? col.lastIndexOf('<a ', r) : col.lastIndexOf('<a ');
-    if (lastA !== -1) {
-      const abs = p + lastA;
-      const [end, len] = firstOf(s, E.closes, abs);
-      s = s.slice(0, end + len) + B + 'n          ' + asPricing(s.slice(abs, end + len), E) + s.slice(end + len);
-      foot = 1;
+    if (!col.includes(PRICING)) {
+      const r = col.indexOf('>Results<');
+      const lastA = r !== -1 ? col.lastIndexOf('<a ', r) : col.lastIndexOf('<a ');
+      if (lastA !== -1) {
+        const abs = p + lastA;
+        const [end, len] = firstOf(s, E.closes, abs);
+        s = s.slice(0, end + len) + B + 'n          ' + asPricing(s.slice(abs, end + len), E) + s.slice(end + len);
+        foot = 1;
+      }
     }
   }
-  return [s, `nav+${nav} footer+${foot}`];
+  return [s, nav || foot ? `nav+${nav} footer+${foot}` : 'already present'];
 }
 
 /* Exactly one nav item highlighted, and only on its own page. Reset everything
@@ -352,8 +412,7 @@ log(`Found ${files.length} file(s) in incoming/`);
 const done = [];
 let failed = 0;
 for (const f of files) {
-  const squashed = f.toLowerCase().replace(/[^a-z]/g, '');
-  const spec = PAGES.find(p => p.match.test(squashed));
+  const spec = PAGES.find(p => p.match.test(norm(f)));
   if (!spec) {
     warn(`SKIPPED ${f} — filename does not identify a page. Expected one of: ${PAGES.map(p => p.page).join(', ')}`);
     failed++;
