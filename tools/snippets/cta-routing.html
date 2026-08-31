@@ -1,0 +1,36 @@
+  <!-- ULP CTA routing -->
+  <script>
+/* The Apply CTAs are <label for="ulp-fm"> elements that open a CSS-toggled
+   modal holding the GoHighLevel survey. Route them to the intake page
+   instead. Delegated on document, in the capture phase, so it runs before the
+   label activates its checkbox -- and so it survives the loader's
+   documentElement.replaceWith() and still covers CTAs mounted later. */
+if (!window.__ulpCtaIntake) {
+  window.__ulpCtaIntake = true;
+  var ULP_INTAKE = "/intake";
+  var ulpFired = false;
+  var ulpGo = function (e) {
+    var el = e.target;
+    if (!el || typeof el.closest !== "function") return;
+    var l = el.closest("label[for='ulp-fm']");
+    if (!l) return;
+    e.preventDefault();
+    e.stopPropagation();
+    /* Keep the Meta Pixel event these CTAs used to fire as anchors. */
+    if (!ulpFired && typeof window.fbq === "function") {
+      ulpFired = true;
+      window.fbq("trackCustom", "ApplyCTAClick", {
+        content_name: (l.textContent || "").replace(/s+/g, " ").trim().slice(0, 100),
+        content_category: "Apply CTA"
+      });
+    }
+    window.location.href = ULP_INTAKE;
+  };
+  document.addEventListener("click", ulpGo, true);
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+    ulpGo(e);
+  }, true);
+}
+  </script>
+  <!-- End ULP CTA routing -->

@@ -1,0 +1,13 @@
+{
+  "name": "ulp-2026",
+  "private": true,
+  "description": "unclelouieproductions.com — static site, plus the pipeline that turns Claude Design exports into publishable pages",
+  "scripts": {
+    "publish-pages": "node tools/publish.js",
+    "dry-run": "node tools/publish.js --dry-run",
+    "verify": "node tools/verify.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.0"
+  }
+}

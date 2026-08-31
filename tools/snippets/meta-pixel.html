@@ -1,0 +1,54 @@
+  <!-- Meta Pixel Code -->
+  <script>
+/* Meta Pixel — ULP Pixel 1479736690450235.
+   Guarded so this block can appear both in the outer <head> (where the loader
+   lives, and where Meta's detector reads the raw HTML) and inside the packed
+   template, without initialising twice. The stub sets window.fbq
+   synchronously, so whichever copy runs first claims it and the other is a
+   no-op. window and document both survive the loader's
+   documentElement.replaceWith(), so an outer-head install keeps working after
+   the page is unpacked. */
+if (!window.fbq) {
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '1479736690450235');
+  fbq('track', 'PageView');
+
+  /* Apply CTAs and phone taps. Delegated on document so it covers CTAs the
+     page runtime mounts later, and deduped per page load — several buttons
+     share the same #apply anchor, so an undeduped listener would count one
+     visitor several times.
+
+     Deliberately NOT Lead. The intake form is a cross-origin GoHighLevel
+     iframe, so this page can only see the click that scrolls to it, never the
+     submission. Lead is reserved for GoHighLevel's own on-submit pixel, which
+     runs inside that iframe and fires on a real application. Sending Lead from
+     here too would drown the real conversions in intent clicks.
+
+     The phone tap is different: a tel: click is a completed action this page
+     genuinely observes, so it gets the standard Contact event. */
+  (function () {
+    var fired = {};
+    document.addEventListener('click', function (e) {
+      var el = e.target;
+      if (!el || typeof el.closest !== 'function') return;
+      var a = el.closest('a[href]');
+      if (!a) return;
+      var href = a.getAttribute('href') || '';
+      var isPhone = href.indexOf('tel:') === 0;
+      var isApply = href.indexOf('#apply') !== -1 || href.indexOf('/intake') !== -1;
+      if (!isPhone && !isApply) return;
+      var key = isPhone ? 'phone' : 'apply';
+      if (fired[key] || typeof window.fbq !== 'function') return;
+      fired[key] = true;
+      var params = {
+        content_name: (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100),
+        content_category: isPhone ? 'Phone Tap' : 'Apply CTA'
+      };
+      if (isPhone) window.fbq('track', 'Contact', params);
+      else window.fbq('trackCustom', 'ApplyCTAClick', params);
+    }, true);
+  })();
+}
+  </script>
+  <noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=1479736690450235&ev=PageView&noscript=1"></noscript>
+  <!-- End Meta Pixel Code -->

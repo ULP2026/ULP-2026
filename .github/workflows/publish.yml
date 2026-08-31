@@ -1,0 +1,86 @@
+name: Publish page updates
+
+# Fires when an export is added to incoming/ on the GitHub website.
+# Everything below runs on GitHub's machines — nothing to install locally.
+on:
+  push:
+    paths:
+      - 'incoming/**'
+  workflow_dispatch:      # also runnable by hand from the Actions tab
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # needed to commit the rebuilt pages
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Are there any exports to process?
+        id: check
+        run: |
+          count=$(find incoming -maxdepth 1 -iname '*.html' 2>/dev/null | wc -l)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -eq 0 ]; then
+            echo "Nothing in incoming/ — this run has nothing to do."
+          else
+            echo "Found $count export(s):"
+            find incoming -maxdepth 1 -iname '*.html' -printf '  %f (%s bytes)\n'
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.count != '0'
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        if: steps.check.outputs.count != '0'
+        run: |
+          npm install --no-audit --no-fund
+          npx --yes playwright@1.62.1 install --with-deps chromium
+
+      - name: Rebuild the pages
+        if: steps.check.outputs.count != '0'
+        run: node tools/publish.js
+
+      - name: Verify in a real browser
+        if: steps.check.outputs.count != '0'
+        run: node tools/verify.js
+
+      # Only reached when verification passed. A failure above leaves main
+      # untouched, so a broken export can never reach the live site.
+      - name: Commit and deploy
+        if: steps.check.outputs.count != '0'
+        run: |
+          git config user.name  "ULP Publish Bot"
+          git config user.email "support@unclelouieproductions.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing changed — not committing."
+            exit 0
+          fi
+          git commit -m "Publish page updates from Claude Design export
+
+          Rebuilt by tools/publish.js and verified by tools/verify.js.
+
+          [skip ci]"
+          git push
+          echo "Pushed to main — Vercel will deploy within a minute or two."
+
+      - name: Explain what went wrong
+        if: failure()
+        run: |
+          echo "::error::Publishing stopped. The live site was NOT changed."
+          echo ""
+          echo "The export did not pass verification. Common causes:"
+          echo "  * page renders blank      -> export is double-bundled"
+          echo "  * page over the size cap  -> a large video is inlined"
+          echo "  * a video never loads     -> shipped with data-remote-src"
+          echo ""
+          echo "Open the failing step above for the specific reason."
+          echo "The export is still in incoming/ — nothing was lost."
