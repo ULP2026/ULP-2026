@@ -302,6 +302,31 @@ function stripGolf(s, E) {
   return [s, parts.join(', ') + (left ? ` — ${left} golf reference(s) still present, check by hand` : '')];
 }
 
+/* On /learn the live event comes before the webinar. Exports ship it the other
+   way round, so the two blocks are swapped back here.
+
+   Each block runs from its own comment banner to the one below it, and the
+   banners sit at the top level of the page, so swapping the spans whole moves
+   the sections without touching a byte inside either. */
+function orderLearn(s) {
+  const at = m => s.indexOf(m);
+  const w = at('<!-- ============ WEBINAR');
+  const le = at('<!-- ============ LIVE EVENT');
+  const cta = at('<!-- ============ FINAL CTA');
+  if (w === -1 || le === -1 || cta === -1) {
+    warn('learn: webinar / live event / final CTA banners not all found — section order left as exported');
+    return [s, 'left as exported'];
+  }
+  if (le < w) return [s, 'already live event first'];
+  if (!(w < le && le < cta)) {
+    warn('learn: banners are not in the expected order — section order left as exported');
+    return [s, 'left as exported'];
+  }
+  const out = s.slice(0, w) + s.slice(le, cta) + s.slice(w, le) + s.slice(cta);
+  if (out.length !== s.length) throw new Error('learn: reordering changed the page length');
+  return [out, 'live event moved above the webinar'];
+}
+
 /* Clone an existing anchor into a Pricing one, so styling always matches the
    page it lands on rather than being hand-rolled. */
 function asPricing(markup, E) {
@@ -421,6 +446,12 @@ function build(srcFile, spec) {
   const [sg, golf] = stripGolf(s, E);
   s = sg;
   log(`  golf removed: ${golf}`);
+
+  if (name === 'learn') {
+    const [sl, order] = orderLearn(s);
+    s = sl;
+    log(`  learn section order: ${order}`);
+  }
 
   const apply = s.split('href=' + E.Q + '#apply' + E.Q).length - 1;
   if (apply) {

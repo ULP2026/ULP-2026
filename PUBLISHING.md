@@ -59,12 +59,14 @@ Per file, in order:
    comment banner, the hero CTA that jumps to it, the footer link, and the hero
    line on `/learn` that pairs it with the webinar. Every export still ships all
    of it; the offering is off the site.
-7. **Repoint** `#apply` at `/intake`.
-8. **Point media** at the copies under `uploads/`.
-9. **Install** the CTA routing script, and the Meta Pixel on `/total-package`.
-10. **Ensure** Pricing is linked in both navs and the footer — the export ships
+7. **Reorder `/learn`** so the live event sits above the webinar. Exports ship
+   the webinar first; the two blocks are swapped back whole, banner to banner.
+8. **Repoint** `#apply` at `/intake`.
+9. **Point media** at the copies under `uploads/`.
+10. **Install** the CTA routing script, and the Meta Pixel on `/total-package`.
+11. **Ensure** Pricing is linked in both navs and the footer — the export ships
     the nav links but never a footer one.
-11. **Set the highlight** so exactly one nav item is active, on its own page.
+12. **Set the highlight** so exactly one nav item is active, on its own page.
 
 Attribute quoting is *detected*, not assumed — nesting depth varies between
 exports, and hard-coding it silently breaks every transform.
