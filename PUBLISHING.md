@@ -55,12 +55,16 @@ Per file, in order:
 3. **Promote** `data-remote-src` / `data-remote-poster` to `src` / `poster`.
 4. **Rewrite links** to clean URLs and repoint routes that do not exist.
 5. **Remove** the dead `/contact` link.
-6. **Repoint** `#apply` at `/intake`.
-7. **Point media** at the copies under `uploads/`.
-8. **Install** the CTA routing script, and the Meta Pixel on `/total-package`.
-9. **Ensure** Pricing is linked in both navs and the footer — the export ships
-   the nav links but never a footer one.
-10. **Set the highlight** so exactly one nav item is active, on its own page.
+6. **Remove Golf with Uncle Louie** — the section on `/` and `/learn`, its
+   comment banner, the hero CTA that jumps to it, the footer link, and the hero
+   line on `/learn` that pairs it with the webinar. Every export still ships all
+   of it; the offering is off the site.
+7. **Repoint** `#apply` at `/intake`.
+8. **Point media** at the copies under `uploads/`.
+9. **Install** the CTA routing script, and the Meta Pixel on `/total-package`.
+10. **Ensure** Pricing is linked in both navs and the footer — the export ships
+    the nav links but never a footer one.
+11. **Set the highlight** so exactly one nav item is active, on its own page.
 
 Attribute quoting is *detected*, not assumed — nesting depth varies between
 exports, and hard-coding it silently breaks every transform.
@@ -69,8 +73,9 @@ exports, and hard-coding it silently breaks every transform.
 
 Every page is loaded in Chromium, scrolled, and checked for: minimum rendered
 text (catches blank pages), zero JS errors, zero failed requests, no dead
-`/contact`, no leftover `.html` links, no broken images, a footer Pricing link,
-identical menus across all pages, exactly the right nav highlight, `window.fbq`
+`/contact`, no golf section, link or mention, no leftover `.html` links, no
+broken images, a footer Pricing link, identical menus across all pages,
+exactly the right nav highlight, `window.fbq`
 on `/total-package`, and every `<video>` loading without a media error. Pages
 over 12 MB fail as a proxy for something large being inlined.
 

@@ -99,6 +99,8 @@ function serve() {
           highlight: navLinks.filter(a => getComputedStyle(a).color === 'rgb(242, 169, 0)').map(a => a.textContent.trim()),
           footerPricing: !![...document.querySelectorAll('a[href="/pricing"]')].some(a => a.closest('footer')),
           contact: document.querySelectorAll('a[href="/contact"]').length,
+          golf: document.querySelectorAll('a[href*="#golf"], #golf').length
+            + (document.body.innerText.match(/golf/gi) || []).length,
           stale: [...document.querySelectorAll('a[href]')].filter(a => /\.html($|#)/.test(a.getAttribute('href'))).length,
           fbq: typeof window.fbq,
           videos: [...document.querySelectorAll('video')].map(v => ({
@@ -112,6 +114,7 @@ function serve() {
       if (errors.length) failures.push(`${route}: ${errors.length} JS error(s) — ${errors[0]}`);
       if (bad.length) failures.push(`${route}: ${bad.length} failed request(s) — ${bad[0]}`);
       if (r.contact) failures.push(`${route}: ${r.contact} dead /contact link(s)`);
+      if (r.golf) failures.push(`${route}: ${r.golf} golf reference(s) — Golf with Uncle Louie is off the site`);
       if (r.stale) failures.push(`${route}: ${r.stale} link(s) still pointing at .html`);
       if (r.images) failures.push(`${route}: ${r.images} broken image(s)`);
       if (!r.footerPricing) failures.push(`${route}: no Pricing link in the footer`);

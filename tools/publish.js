@@ -50,7 +50,7 @@ const LINKS = [
   ['terms.html', '/terms'], ['privacy.html', '/privacy'],
   ['intake.html', '/intake'], ['thank-you.html', '/thank-you'],
   ['pricing.html', '/pricing'],
-  ['/blog', '/#blog'], ['/process', '/#process'], ['/golf', '/#golf'],
+  ['/blog', '/#blog'], ['/process', '/#process'],
   ['/faq', '/#faq'], ['/es/', '/#bilingual'], ['/webinar', '/learn#webinar'],
   ['/centro', '/total-package#centro'], ['/build-log', '/total-package#buildlog'],
 ];
@@ -229,18 +229,77 @@ function promoteDeferredMedia(s) {
   return s;
 }
 
-function stripAnchors(s, E, hrefToken) {
+/* The length guard is a safety valve: an anchor far longer than expected means
+   the close was mismatched, and cutting on it would take the page with it.
+   Anchors carrying inline handlers run long, so the limit is caller-set. */
+function stripAnchors(s, E, hrefToken, limit = 500) {
   const OPEN = '<a ' + hrefToken;
   let n = 0;
   for (;;) {
     const i = s.indexOf(OPEN);
     if (i === -1) break;
     const [end, len] = firstOf(s, E.closes, i);
-    if (end === -1 || end + len - i > 500) break;
+    if (end === -1 || end + len - i > limit) break;
     s = s.slice(0, i) + s.slice(end + len);
     n++;
   }
   return [s, n];
+}
+
+/* Golf with Uncle Louie is gone from the site. Exports still ship the section
+   on /home and /learn, the hero CTA that jumps to it, the footer link in the
+   MORE column, and the hero line pairing it with the webinar — so every one of
+   those is stripped here rather than by hand after each export. */
+const GOLF_COPY = [
+  ['Two free ways into Uncle Louie’s world: a live webinar every Wednesday, and a quarterly golf day in Tampa Bay.',
+   'One free way into Uncle Louie’s world: a live webinar every Wednesday.'],
+];
+
+function stripGolf(s, E) {
+  const closes = ['<' + B + '/section>', '<' + B + 'u002Fsection>',
+                  '<' + B + B + '/section>', '<' + B + B + 'u002Fsection>'].filter(c => s.includes(c));
+  const OPEN = '<section id=' + E.Q + 'golf' + E.Q;
+  let sections = 0;
+  while (closes.length) {
+    const i = s.indexOf(OPEN);
+    if (i === -1) break;
+    /* Walk to the matching close, counting nested sections. */
+    let depth = 0, j = i, end = -1;
+    for (;;) {
+      const o = s.indexOf('<section', j + 1);
+      const [c, len] = firstOf(s, closes, j + 1);
+      if (c === -1) break;
+      if (o !== -1 && o < c) { depth++; j = o; continue; }
+      j = c + len;
+      if (depth === 0) { end = j; break; }
+      depth--;
+    }
+    if (end === -1) { warn('golf section has no matching close — left in place'); break; }
+    s = s.slice(0, i) + s.slice(end);
+    sections++;
+  }
+
+  const banners = (s.match(/<!--[^>]*GOLF[^>]*-->/gi) || []).length;
+  if (banners) s = s.replace(/<!--[^>]*GOLF[^>]*-->/gi, '');
+
+  let anchors = 0;
+  for (const href of ['/#golf', '#golf']) {
+    const [next, n] = stripAnchors(s, E, 'href=' + E.Q + href + E.Q, 1500);
+    s = next;
+    anchors += n;
+  }
+
+  let copy = 0;
+  for (const [from, to] of GOLF_COPY) {
+    const n = s.split(from).length - 1;
+    if (n) { s = s.split(from).join(to); copy += n; }
+  }
+
+  /* Base64 in the manifest throws up "golf" by chance, so the leftover check
+     looks for the label and the anchor rather than the bare word. */
+  const left = (s.match(/#golf|golf with uncle louie/gi) || []).length;
+  const parts = [`${sections} section(s)`, `${banners} banner(s)`, `${anchors} link(s)`, `${copy} copy line(s)`];
+  return [s, parts.join(', ') + (left ? ` — ${left} golf reference(s) still present, check by hand` : '')];
 }
 
 /* Clone an existing anchor into a Pricing one, so styling always matches the
@@ -358,6 +417,10 @@ function build(srcFile, spec) {
   const [s1, gone] = stripAnchors(s, E, 'href=' + E.Q + '/contact' + E.Q);
   s = s1;
   if (gone) log(`  removed ${gone} dead /contact link(s)`);
+
+  const [sg, golf] = stripGolf(s, E);
+  s = sg;
+  log(`  golf removed: ${golf}`);
 
   const apply = s.split('href=' + E.Q + '#apply' + E.Q).length - 1;
   if (apply) {
